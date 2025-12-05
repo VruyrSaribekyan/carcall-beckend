@@ -92,7 +92,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 2. Инициация звонка
     socket.on('call_user', async (data) => {
         try {
             const { userToCall, signalData, from, fromCarNumber, isVideo } = data;
@@ -100,11 +99,9 @@ io.on('connection', (socket) => {
             console.log(`📞 Call from ${fromCarNumber} (${socket.id}) to ${userToCall}`);
             
             const receiverSocketId = onlineUsers[userToCall];
-            console.log('📞 Call init from:', fromCarNumber, 'To:', userToCall, 'Receiver socket:', receiverSocketId);
-            if (!receiverSocketId) console.log('❌ Offline');
+            console.log('📞 Receiver socket ID:', receiverSocketId);
             
             if (receiverSocketId) {
-                // Проверяем, что сокет получателя всё ещё подключён
                 const receiverSocket = io.sockets.sockets.get(receiverSocketId);
                 
                 if (receiverSocket && receiverSocket.connected) {
@@ -126,10 +123,9 @@ io.on('connection', (socket) => {
                     
                     console.log(`✅ Call signal sent to ${userToCall} (${receiverSocketId})`);
                 } else {
-                    console.log(`⚠️ Receiver socket ${receiverSocketId} not connected, cleaning up`);
+                    console.log(`⚠️ Receiver socket ${receiverSocketId} not connected`);
                     cleanupSocket(receiverSocketId);
                     
-                    // Сохраняем пропущенный звонок
                     await CallHistory.create({
                         callerCarNumber: fromCarNumber,
                         receiverCarNumber: userToCall,
@@ -141,7 +137,6 @@ io.on('connection', (socket) => {
                     socket.emit("call_failed", { reason: "User offline" });
                 }
             } else {
-                // Пользователь оффлайн
                 await CallHistory.create({
                     callerCarNumber: fromCarNumber,
                     receiverCarNumber: userToCall,
@@ -162,75 +157,104 @@ io.on('connection', (socket) => {
     // 3. Принятие звонка
     socket.on("answer_call", async (data) => {
         try {
-            const { signal, to: callerCarNumber } = data;
-          console.log(`✅ Call answered by ${socket.id} to ${to} (carNumber)`);
-      
-          const callerSocketId = onlineUsers[callerCarNumber]; // ← было io.sockets.sockets.get(to)
-          if (!callerSocketId) return socket.emit("call_ended");          if (!callerSocketId) {
-            console.log(`❌ Caller ${to} not online`);
-            socket.emit("call_ended");
-            return;
-          }
-      
-          const callerSocket = io.sockets.sockets.get(callerSocketId);
-          if (callerSocket && callerSocket.connected) {
-            // Update call status
-            if (activeCalls[socket.id]) { // Use receiver socket.id or adjust key
-              activeCalls[socket.id].answered = true;
-              activeCalls[socket.id].answerTime = Date.now();
+            const { signal, to } = data; // to = callerCarNumber
+            const receiverCarNumber = socketToCarNumber[socket.id];
+            
+            console.log(`✅ Call answered by ${receiverCarNumber} (${socket.id}) to caller ${to}`);
+            
+            const callerSocketId = onlineUsers[to];
+            
+            if (!callerSocketId) {
+                console.log(`❌ Caller ${to} not found in onlineUsers`);
+                socket.emit("call_ended");
+                return;
             }
-            io.to(callerSocketId).emit("call_accepted", signal); // Emit to socketId (or room to)
-            console.log(`✅ Sent call_accepted to caller socket ${callerSocketId}`);
-          } else {
-            console.log(`⚠️ Caller socket ${callerSocketId} not connected`);
-            socket.emit("call_ended");
-          }
+            
+            const callerSocket = io.sockets.sockets.get(callerSocketId);
+            
+            if (callerSocket && callerSocket.connected) {
+                // Update call status
+                if (activeCalls[callerSocketId]) {
+                    activeCalls[callerSocketId].answered = true;
+                    activeCalls[callerSocketId].answerTime = Date.now();
+                }
+                
+                // Отправляем answer обратно звонящему
+                io.to(callerSocketId).emit("call_accepted", signal);
+                console.log(`✅ Sent call_accepted to caller socket ${callerSocketId}`);
+            } else {
+                console.log(`⚠️ Caller socket ${callerSocketId} not connected`);
+                socket.emit("call_ended");
+            }
         } catch (error) {
-          console.error('❌ Answer call error:', error);
+            console.error('❌ Answer call error:', error);
+            socket.emit("call_ended");
         }
-      });
-
+    });
+    
     // 4. Отклонение звонка
     socket.on("reject_call", async (data) => {
         try {
-          const { to } = data; // to = callerCarNumber
-          const receiverCarNumber = socketToCarNumber[socket.id]; // Get from map
-          const fromCarNumber = to; // Caller carNumber
-          console.log(`❌ Call rejected by ${receiverCarNumber} from ${fromCarNumber}`);
-      
-          // Save rejected
-          await CallHistory.create({
-            callerCarNumber: fromCarNumber,
-            receiverCarNumber: receiverCarNumber,
-            status: 'rejected',
-            callType: activeCalls[socket.id]?.isVideo ? 'video' : 'audio', // Adjust key if needed
-            duration: 0
-          });
-      
-          const callerSocketId = onlineUsers[to];
-          if (callerSocketId) {
-            const callerSocket = io.sockets.sockets.get(callerSocketId);
-            if (callerSocket && callerSocket.connected) {
-              io.to(callerSocketId).emit("call_rejected");
+            const { to } = data; // to = callerCarNumber
+            const receiverCarNumber = socketToCarNumber[socket.id];
+            
+            console.log(`❌ Call rejected by ${receiverCarNumber} from ${to}`);
+            
+            // Найдём информацию о звонке
+            const callerSocketId = onlineUsers[to];
+            let callInfo = null;
+            
+            if (callerSocketId) {
+                callInfo = activeCalls[callerSocketId];
             }
-          }
-      
-          delete activeCalls[socket.id]; // Clean receiver
+            
+            // Сохраняем отклонённый звонок
+            await CallHistory.create({
+                callerCarNumber: to,
+                receiverCarNumber: receiverCarNumber,
+                status: 'rejected',
+                callType: callInfo?.isVideo ? 'video' : 'audio',
+                duration: 0
+            });
+            
+            // Уведомляем звонящего
+            if (callerSocketId) {
+                const callerSocket = io.sockets.sockets.get(callerSocketId);
+                if (callerSocket && callerSocket.connected) {
+                    io.to(callerSocketId).emit("call_rejected");
+                    console.log(`✅ Sent call_rejected to ${callerSocketId}`);
+                }
+            }
+            
+            // Очищаем данные о звонке
+            if (callerSocketId) {
+                delete activeCalls[callerSocketId];
+            }
+            
         } catch (error) {
-          console.error('❌ Reject call error:', error);
+            console.error('❌ Reject call error:', error);
         }
-      });
-
+    });
     // 5. Завершение звонка
     socket.on("end_call", async (data) => {
         try {
-            const { to } = data;
+            const { to } = data; // to = carNumber другой стороны
+            const myCarNumber = socketToCarNumber[socket.id];
             
-            console.log(`📴 Call ended by ${socket.id}`);
+            console.log(`📴 Call ended by ${myCarNumber} (${socket.id}), notifying ${to}`);
+            
+            // Находим данные о звонке
+            let callData = activeCalls[socket.id];
+            
+            // Если не нашли у себя, ищем у другой стороны
+            if (!callData) {
+                const otherSocketId = onlineUsers[to];
+                if (otherSocketId) {
+                    callData = activeCalls[otherSocketId];
+                }
+            }
             
             // Сохраняем завершённый звонок
-            const callData = activeCalls[socket.id] || activeCalls[to];
-            
             if (callData && callData.answered) {
                 const duration = Math.floor((Date.now() - callData.answerTime) / 1000);
                 
@@ -243,26 +267,29 @@ io.on('connection', (socket) => {
                     startTime: new Date(callData.answerTime),
                     endTime: new Date()
                 });
+                
+                console.log(`💾 Saved call: ${callData.caller} -> ${callData.receiver}, duration: ${duration}s`);
             }
             
             // Уведомляем другую сторону
-            const receiverCarNumber = callData?.receiver || to;
-            const receiverSocketId = onlineUsers[receiverCarNumber];
-            
+            const receiverSocketId = onlineUsers[to];
             if (receiverSocketId) {
                 const receiverSocket = io.sockets.sockets.get(receiverSocketId);
                 if (receiverSocket && receiverSocket.connected) {
                     io.to(receiverSocketId).emit("call_ended");
+                    console.log(`✅ Sent call_ended to ${to} (${receiverSocketId})`);
                 }
+                // Очищаем данные у получателя
+                delete activeCalls[receiverSocketId];
             }
             
+            // Очищаем свои данные
             delete activeCalls[socket.id];
-            delete activeCalls[to];
+            
         } catch (error) {
             console.error('❌ End call error:', error);
         }
     });
-
     // 6. ICE кандидаты
     socket.on("ice_candidate", (data) => {
         try {
