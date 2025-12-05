@@ -162,11 +162,11 @@ io.on('connection', (socket) => {
     // 3. Принятие звонка
     socket.on("answer_call", async (data) => {
         try {
-          const { signal, to } = data; // to = callerCarNumber
+            const { signal, to: callerCarNumber } = data;
           console.log(`✅ Call answered by ${socket.id} to ${to} (carNumber)`);
       
-          const callerSocketId = onlineUsers[to]; // Get socketId from onlineUsers
-          if (!callerSocketId) {
+          const callerSocketId = onlineUsers[callerCarNumber]; // ← было io.sockets.sockets.get(to)
+          if (!callerSocketId) return socket.emit("call_ended");          if (!callerSocketId) {
             console.log(`❌ Caller ${to} not online`);
             socket.emit("call_ended");
             return;
