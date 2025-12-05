@@ -55,10 +55,11 @@ const cleanupSocket = (socketId) => {
 };
 
 io.on('connection', (socket) => {
-    console.log('✅ Socket connected:', socket.id);
+    console.log('✅ Connected socket ID:', socket.id);
 
     // 1. Вход в сеть
     socket.on('join', async (carNumber) => {
+        console.log('📝 Join from carNumber:', carNumber, 'Old socket:', onlineUsers[carNumber]);
         try {
             // Проверяем, не был ли этот пользователь подключён с другим сокетом
             const oldSocketId = onlineUsers[carNumber];
@@ -99,6 +100,8 @@ io.on('connection', (socket) => {
             console.log(`📞 Call from ${fromCarNumber} (${socket.id}) to ${userToCall}`);
             
             const receiverSocketId = onlineUsers[userToCall];
+            console.log('📞 Call init from:', fromCarNumber, 'To:', userToCall, 'Receiver socket:', receiverSocketId);
+            if (!receiverSocketId) console.log('❌ Offline');
             
             if (receiverSocketId) {
                 // Проверяем, что сокет получателя всё ещё подключён
