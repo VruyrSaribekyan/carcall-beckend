@@ -162,58 +162,64 @@ io.on('connection', (socket) => {
     // 3. Принятие звонка
     socket.on("answer_call", async (data) => {
         try {
-            const { signal, to } = data;
-            
-            console.log(`✅ Call answered by ${socket.id} to ${to}`);
-            
-            // Проверяем, что caller socket всё ещё подключён
-            const callerSocket = io.sockets.sockets.get(to);
-            
-            if (callerSocket && callerSocket.connected) {
-                // Обновляем статус звонка
-                if (activeCalls[to]) {
-                    activeCalls[to].answered = true;
-                    activeCalls[to].answerTime = Date.now();
-                }
-                
-                io.to(to).emit("call_accepted", signal);
-            } else {
-                console.log(`⚠️ Caller socket ${to} not connected`);
-                socket.emit("call_ended");
+          const { signal, to } = data; // to = callerCarNumber
+          console.log(`✅ Call answered by ${socket.id} to ${to} (carNumber)`);
+      
+          const callerSocketId = onlineUsers[to]; // Get socketId from onlineUsers
+          if (!callerSocketId) {
+            console.log(`❌ Caller ${to} not online`);
+            socket.emit("call_ended");
+            return;
+          }
+      
+          const callerSocket = io.sockets.sockets.get(callerSocketId);
+          if (callerSocket && callerSocket.connected) {
+            // Update call status
+            if (activeCalls[socket.id]) { // Use receiver socket.id or adjust key
+              activeCalls[socket.id].answered = true;
+              activeCalls[socket.id].answerTime = Date.now();
             }
+            io.to(callerSocketId).emit("call_accepted", signal); // Emit to socketId (or room to)
+            console.log(`✅ Sent call_accepted to caller socket ${callerSocketId}`);
+          } else {
+            console.log(`⚠️ Caller socket ${callerSocketId} not connected`);
+            socket.emit("call_ended");
+          }
         } catch (error) {
-            console.error('❌ Answer call error:', error);
+          console.error('❌ Answer call error:', error);
         }
-    });
+      });
 
     // 4. Отклонение звонка
     socket.on("reject_call", async (data) => {
         try {
-            const { from, fromCarNumber, receiverCarNumber } = data;
-            
-            console.log(`❌ Call rejected by ${receiverCarNumber}`);
-            
-            // Сохраняем отклонённый звонок
-            await CallHistory.create({
-                callerCarNumber: fromCarNumber,
-                receiverCarNumber,
-                status: 'rejected',
-                callType: activeCalls[from]?.isVideo ? 'video' : 'audio',
-                duration: 0
-            });
-            
-            if (from) {
-                const callerSocket = io.sockets.sockets.get(from);
-                if (callerSocket && callerSocket.connected) {
-                    io.to(from).emit("call_rejected");
-                }
+          const { to } = data; // to = callerCarNumber
+          const receiverCarNumber = socketToCarNumber[socket.id]; // Get from map
+          const fromCarNumber = to; // Caller carNumber
+          console.log(`❌ Call rejected by ${receiverCarNumber} from ${fromCarNumber}`);
+      
+          // Save rejected
+          await CallHistory.create({
+            callerCarNumber: fromCarNumber,
+            receiverCarNumber: receiverCarNumber,
+            status: 'rejected',
+            callType: activeCalls[socket.id]?.isVideo ? 'video' : 'audio', // Adjust key if needed
+            duration: 0
+          });
+      
+          const callerSocketId = onlineUsers[to];
+          if (callerSocketId) {
+            const callerSocket = io.sockets.sockets.get(callerSocketId);
+            if (callerSocket && callerSocket.connected) {
+              io.to(callerSocketId).emit("call_rejected");
             }
-            
-            delete activeCalls[from];
+          }
+      
+          delete activeCalls[socket.id]; // Clean receiver
         } catch (error) {
-            console.error('❌ Reject call error:', error);
+          console.error('❌ Reject call error:', error);
         }
-    });
+      });
 
     // 5. Завершение звонка
     socket.on("end_call", async (data) => {
