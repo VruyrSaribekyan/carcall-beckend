@@ -3,7 +3,8 @@ const router = express.Router();
 const controller = require('../controllers/userController');
 const authMiddleware = require('../middleware/authMiddleware');
 const upload = require('../middleware/uploadMiddleware');
-const { User }= require('../models/User');
+const { User } = require('../models'); 
+console.log('User model:', User);
 
 // Все маршруты ниже требуют авторизации
 router.use(authMiddleware);

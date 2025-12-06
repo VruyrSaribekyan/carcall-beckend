@@ -46,11 +46,6 @@ const User = sequelize.define('User', {
             is: /^\+?[1-9]\d{1,14}$/ // Международный формат E.164
         }
     },
-    fcmToken: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'Firebase Cloud Messaging token for push notifications'
-      },
     // Технические поля
     avatarUrl: { 
         type: DataTypes.STRING, 

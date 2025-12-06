@@ -1,11 +1,8 @@
 const path = require('path');
 
 module.exports = {
-  // ИЗМЕНЕНИЕ ЗДЕСЬ: указываем на корневую папку config
-  'config': path.resolve('config', 'config.js'), 
-  
-  // Остальные пути должны указывать на папку src
-  'models-path': path.resolve('src', 'models'), 
-  'migrations-path': path.resolve('src', 'migrations'), 
-  'seeders-path': path.resolve('src', 'seeders')
+  'config': path.resolve('config', 'config.js'),
+  'models-path': path.resolve('models'),        // <-- было src/models
+  'migrations-path': path.resolve('migrations'),
+  'seeders-path': path.resolve('seeders')
 };

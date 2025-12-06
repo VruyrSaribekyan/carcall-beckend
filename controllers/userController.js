@@ -1,6 +1,6 @@
-const { User } = require('../models');
 const { Op } = require('sequelize');
 const supabase = require('../config/supabase');
+const { User } = require('../models');
 
 // Получение профиля (Get Me)
 exports.getMe = async (req, res) => {
