@@ -1,29 +1,54 @@
 // utils/pushNotifications.js
+require('dotenv').config();
 const admin = require('firebase-admin');
-const path = require('path');
 
-// Путь к Service Account JSON
-const serviceAccountPath = path.join(__dirname, '../config/carcall-cff03-firebase-adminsdk-fbsvc-1361ac3055.json');
+/**
+ * ИНИЦИАЛИЗАЦИЯ FIREBASE ADMIN ИЗ .ENV
+ * ------------------------------------
+ * Никаких путей, никаких JSON-файлов.
+ * Теперь Firebase берет ключи из ENV.
+ */
 
-// Проверяем существование файла
-const fs = require('fs');
-if (!fs.existsSync(serviceAccountPath)) {
-  console.error('❌ Service Account JSON not found at:', serviceAccountPath);
-  console.error('⚠️ Push notifications will NOT work!');
-} else {
-  try {
-    const serviceAccount = require(serviceAccountPath);
-    
-    // Инициализация Firebase Admin SDK
-    if (!admin.apps.length) {
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-      });
-      console.log('✅ Firebase Admin SDK initialized successfully');
-    }
-  } catch (error) {
-    console.error('❌ Firebase Admin initialization error:', error.message);
+const requiredEnvVars = [
+  "GOOGLE_PROJECT_ID",
+  "GOOGLE_PRIVATE_KEY_ID",
+  "GOOGLE_PRIVATE_KEY",
+  "GOOGLE_CLIENT_EMAIL",
+  "GOOGLE_CLIENT_ID",
+];
+
+let missing = false;
+
+requiredEnvVars.forEach((key) => {
+  if (!process.env[key]) {
+    console.error(`❌ Missing ENV: ${key}`);
+    missing = true;
   }
+});
+
+if (missing) {
+  console.error("⚠️ Firebase Admin may NOT initialize due to missing ENV variables!");
+}
+
+try {
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        type: "service_account",
+        project_id: process.env.GOOGLE_PROJECT_ID,
+        private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        token_uri: "https://oauth2.googleapis.com/token",
+        universe_domain: process.env.GOOGLE_UNIVERSE_DOMAIN || "googleapis.com",
+      }),
+    });
+
+    console.log("✅ Firebase Admin initialized successfully via .env");
+  }
+} catch (error) {
+  console.error("❌ Firebase Admin initialization failed:", error.message);
 }
 
 /**

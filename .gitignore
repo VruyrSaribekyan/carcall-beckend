@@ -2,4 +2,3 @@ node_modules
 .env
 uploads
 config/serviceAccountKey.json
-config/carcall-cff03-firebase-adminsdk-fbsvc-1361ac3055.json
